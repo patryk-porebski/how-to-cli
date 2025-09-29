@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "how-to-cli"
-version = "0.0.4"
+version = "0.0.5"
 description = "Ask LLMs how to do anything with terminal commands"
 readme = "README.md"
 license = {text = "MIT"}
@@ -93,7 +93,8 @@ py-modules = [
     "history",
     "cache",
     "streaming",
-    "background"
+    "background",
+    "model_selector"
 ]
 
 [tool.setuptools.package-data]
