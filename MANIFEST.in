@@ -1,0 +1,13 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include requirements.txt
+include pyproject.toml
+recursive-include completions *.bash *.zsh *.fish
+recursive-include tests *.py
+exclude .gitignore
+exclude .DS_Store
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude *.sw?
+global-exclude *~
