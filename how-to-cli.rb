@@ -3,7 +3,7 @@ class HowToCli < Formula
 
   desc "Ask LLMs how to do anything with terminal commands"
   homepage "https://github.com/patryk-porebski/how-to-cli"
-  url "https://github.com/patryk-porebski/how-to-cli/archive/refs/tags/v0.0.3.tar.gz"
+  url "https://github.com/patryk-porebski/how-to-cli/archive/refs/tags/v0.0.4.tar.gz"
   sha256 "PUT_SHA256_HERE_AFTER_RELEASE"
   license "MIT"
 
