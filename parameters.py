@@ -646,47 +646,60 @@ class ParameterCustomizer:
         result = Text()
         last_end = 0
         
-        # We need to track the current positions after applying changes
-        # Create a copy of parameters with updated positions
+        # Calculate actual positions in the modified command
+        # We need to apply changes incrementally and track real positions
         working_params = []
-        for i, param in enumerate(parameters):
-            current_value = new_values.get(i, param.original_value)
-            working_params.append((i, param, current_value))
+        temp_command = command
+        position_map = {}  # Maps parameter index to (start, end) in modified command
         
-        # Sort by original position
-        working_params.sort(key=lambda x: x[1].start_pos)
+        # Sort parameters by original position (right to left for position stability)
+        sorted_param_indices = sorted(range(len(parameters)), key=lambda i: parameters[i].start_pos)
         
-        # Track position adjustments
-        position_offset = 0
-        
-        for i, param, current_value in working_params:
-            # Calculate current positions with offset
-            start_pos = param.start_pos + position_offset
-            end_pos = start_pos + len(current_value)
+        # Apply changes one by one and track positions
+        for idx in sorted_param_indices:
+            param = parameters[idx]
+            current_value = new_values.get(idx, param.original_value)
             
+            # Find where this parameter's original position maps to in temp_command
+            # by calculating cumulative offset from all previous changes
+            offset = 0
+            for prev_idx in sorted_param_indices:
+                if prev_idx >= idx:
+                    break
+                prev_param = parameters[prev_idx]
+                prev_value = new_values.get(prev_idx, prev_param.original_value)
+                if prev_param.start_pos < param.start_pos:
+                    offset += len(prev_value) - len(prev_param.original_value)
+            
+            actual_start = param.start_pos + offset
+            actual_end = actual_start + len(current_value)
+            position_map[idx] = (actual_start, actual_end)
+            working_params.append((idx, current_value, actual_start, actual_end))
+        
+        # Sort by actual position in modified command for rendering
+        working_params.sort(key=lambda x: x[2])
+        
+        # Build the highlighted text
+        for idx, current_value, start_pos, end_pos in working_params:
             # Add text before this parameter
             if start_pos > last_end:
                 result.append(current_command[last_end:start_pos], style="white")
             
             # Add the parameter with appropriate highlighting
-            if i == selected_index:
+            if idx == selected_index:
                 # Currently selected parameter - very prominent highlight
-                if i in new_values:
+                if idx in new_values:
                     result.append(current_value, style="bold white on blue")
                 else:
                     result.append(current_value, style="bold white on green") 
             else:
                 # Other parameters - subtle highlight
-                if i in new_values:
+                if idx in new_values:
                     result.append(current_value, style="yellow")
                 else:
                     result.append(current_value, style="cyan")
             
-            # Update position tracking
             last_end = end_pos
-            original_length = len(param.original_value)
-            current_length = len(current_value)
-            position_offset += (current_length - original_length)
         
         # Add remaining text after the last parameter
         if last_end < len(current_command):

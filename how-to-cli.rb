@@ -4,7 +4,7 @@ class HowToCli < Formula
   desc "Ask LLMs how to do anything with terminal commands"
   homepage "https://github.com/patryk-porebski/how-to-cli"
   url "https://github.com/patryk-porebski/how-to-cli/archive/refs/tags/v0.0.5.tar.gz"
-  sha256 "PUT_SHA256_HERE_AFTER_RELEASE"
+  sha256 "dae43ad7751a3e087e77152a9d277a9d01a10190fbf90fa3ed5a2fccb4da31b6"
   license "MIT"
 
   depends_on "python@3.11"
