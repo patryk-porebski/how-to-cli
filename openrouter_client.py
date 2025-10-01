@@ -377,7 +377,20 @@ class OpenRouterClient:
     def _parse_commands_json(self, content: str) -> List[Command]:
         """Try to parse strict JSON of commands with parameters."""
         try:
-            data = json.loads(content)
+            # Strip markdown code fences if present (e.g., ```json ... ```)
+            stripped_content = content.strip()
+            if stripped_content.startswith('```'):
+                # Find the end of the first line (language identifier)
+                first_newline = stripped_content.find('\n')
+                if first_newline != -1:
+                    # Remove first line with ```json or similar
+                    stripped_content = stripped_content[first_newline + 1:]
+                # Remove trailing ```
+                if stripped_content.endswith('```'):
+                    stripped_content = stripped_content[:-3]
+                stripped_content = stripped_content.strip()
+            
+            data = json.loads(stripped_content)
         except Exception:
             return []
         items = data.get('commands') if isinstance(data, dict) else None

@@ -35,6 +35,7 @@ class ParameterDetector:
             r'<[^>]+>',             # <filename>, <path>
             r'\[[^\]]+\]',          # [input], [output]
             r'\$\w+',               # $INPUT, $OUTPUT
+            r'\b[A-Z][A-Z_]{2,}\b', # INPUT_VIDEO, FRAME_NUMBER, OUTPUT_IMAGE (bare ALL_CAPS words)
         ]
         
         # File path patterns (likely to be customized)
@@ -470,26 +471,56 @@ class ParameterCustomizer:
         """Launch navigable parameter customization interface"""
         parameters = self.detector.detect_parameters(command)
         
-        # Merge in preset parameters from LLM (if provided with the command)
-        try:
-            if self.preset_parameters:
+        # TEMPORARY: Disable LLM-provided parameters due to span position issues
+        # The heuristic detection is more reliable for now
+        # TODO: Fix LLM span position calculation for nested quotes
+        if False and self.preset_parameters:
+            # Merge in preset parameters from LLM (if provided with the command)
+            try:
+                # DEBUG: Print what LLM provided
+                import sys
                 for p in self.preset_parameters:
                     start = p.get('spanStart')
                     end = p.get('spanEnd')
-                    original_value = command[start:end] if isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= len(command) else (p.get('original_value') or p.get('name'))
+                    
+                    # Validate and potentially fix span positions
+                    if isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= len(command):
+                        actual_text = command[start:end]
+                        print(f"[DEBUG] LLM param: {p.get('name')} = '{actual_text}' at [{start}:{end}]", file=sys.stderr)
+                        
+                        # Check if the span looks reasonable (not spanning across quotes weirdly)
+                        # If the extracted value contains unbalanced quotes or special chars, it's likely wrong
+                        if actual_text.count('"') % 2 != 0 or actual_text.count("'") % 2 != 0:
+                            print(f"[DEBUG] WARNING: Unbalanced quotes in span, skipping LLM parameter", file=sys.stderr)
+                            continue
+                        
+                        original_value = actual_text
+                    else:
+                        print(f"[DEBUG] LLM param: {p.get('name')} with invalid span [{start}:{end}], skipping", file=sys.stderr)
+                        continue
+                    
                     parameters.append(Parameter(
                         name=(p.get('name') or 'Parameter'),
                         original_value=original_value,
-                        start_pos=start if isinstance(start, int) else 0,
-                        end_pos=end if isinstance(end, int) else 0,
+                        start_pos=start,
+                        end_pos=end,
                         param_type='option',
                         suggestions=p.get('suggestions') or [],
                         description=(p.get('description') or (p.get('role') or 'Parameter'))
                     ))
+                
+                print(f"[DEBUG] Command: {command}", file=sys.stderr)
+                print(f"[DEBUG] Total parameters before dedup: {len(parameters)}", file=sys.stderr)
+                
                 parameters = self.detector._deduplicate_parameters(parameters)
                 parameters.sort(key=lambda p: p.start_pos)
-        except Exception:
-            pass
+                
+                print(f"[DEBUG] Parameters after dedup:", file=sys.stderr)
+                for i, param in enumerate(parameters):
+                    print(f"  [{i}] {param.name} = '{param.original_value}' at [{param.start_pos}:{param.end_pos}]", file=sys.stderr)
+            except Exception as e:
+                import sys
+                print(f"[DEBUG] Exception in parameter merging: {e}", file=sys.stderr)
         
         # Avoid a second LLM call here to keep Enter-to-customize fast.
         # Only if nothing at all was found and no preset parameters exist, fallback to LLM (best-effort).

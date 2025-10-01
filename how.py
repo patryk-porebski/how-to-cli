@@ -25,6 +25,7 @@ from streaming import StreamingExecutor
 from background import JobManager, JobStatus
 from interactive import InteractiveSelector, MinimalExecutor
 from model_selector import ModelSelector
+from shell_history import ShellHistoryWriter
 
 def _get_query_with_history(history_manager=None):
     """Get query from user with arrow key history navigation"""
@@ -39,7 +40,7 @@ def _get_query_with_history(history_manager=None):
     if history_manager:
         try:
             entries = history_manager.search(limit=50)
-            # Get unique queries only, in reverse chronological order
+            # Get unique queries only, in reverse chronological order (newest first)
             seen_queries = set()
             query_history = []
             for entry in entries:
@@ -47,9 +48,13 @@ def _get_query_with_history(history_manager=None):
                     query_history.append(entry.query)
                     seen_queries.add(entry.query)
             
-            # Set up readline history (add in chronological order for proper navigation)
+            # Reverse the list so oldest is first, newest is last
+            # This way, pressing up arrow gives you the most recent query first
+            query_history.reverse()
+            
+            # Set up readline history (add in chronological order: oldest to newest)
             readline.clear_history()
-            for query in query_history:  # Add in chronological order (oldest to newest)
+            for query in query_history:
                 readline.add_history(query)
                 
         except Exception as e:
@@ -147,6 +152,7 @@ def cli(ctx, config, api_key, model, max_tokens, temperature, no_confirm, verbos
         ctx.obj['session_manager'] = SessionManager()
         ctx.obj['query_cache'] = QueryCache() if cache else None
         ctx.obj['job_manager'] = JobManager() if parallel else None
+        ctx.obj['shell_history'] = ShellHistoryWriter()
         
     except ConfigurationError as e:
         logger.error(f"Configuration error: {e}")
@@ -181,6 +187,7 @@ def to(ctx, query, context):
     session_manager = ctx.obj['session_manager']
     query_cache = ctx.obj.get('query_cache')
     job_manager = ctx.obj.get('job_manager')
+    shell_history = ctx.obj.get('shell_history')
     
     # Get query from user if not provided
     if not query:
@@ -275,17 +282,51 @@ def to(ctx, query, context):
                 selected_command, action = result
                 success = False
                 output = ""
+                executed_command = None
                 
                 if action == 'execute':
                     # Execute the command and EXIT
                     success = minimal_executor.execute_command(selected_command)
                     output = "Command executed" if success else "Command failed"
+                    executed_command = selected_command.command
+                    
+                    # Add to history
+                    if config.get('history.enabled', True):
+                        history_entry = HistoryEntry(
+                            query=query_text,
+                            command=selected_command.command,
+                            description=selected_command.description,
+                            success=success,
+                            output=output,
+                            working_directory=selected_command.working_directory or ""
+                        )
+                        history.add_entry(history_entry)
+                    
+                    # Write to shell history if enabled
+                    if config.get('history.write_to_shell_history', False) and shell_history and success:
+                        shell_types = config.get('history.shell_history_shells', ['bash', 'zsh'])
+                        for shell_type in shell_types:
+                            shell_history.write_to_history(selected_command.command, shell_type)
+                    
                     break  # Exit the loop and program
                     
                 elif action == 'copy':
                     # Copy to clipboard and EXIT
                     success = minimal_executor.copy_command(selected_command)
                     output = "Copied to clipboard" if success else "Copy failed"
+                    
+                    # Add to history
+                    if config.get('history.enabled', True):
+                        history_entry = HistoryEntry(
+                            query=query_text,
+                            command=selected_command.command,
+                            description=selected_command.description,
+                            success=success,
+                            output=output,
+                            working_directory=selected_command.working_directory or ""
+                        )
+                        history.add_entry(history_entry)
+                    
                     break  # Exit the loop and program
                     
                 elif action == 'edit':
@@ -295,6 +336,26 @@ def to(ctx, query, context):
                         # Always execute the command after editing (even if unchanged)
                         success = minimal_executor.execute_command(edited_command)
                         output = "Command executed" if success else "Command failed"
+                        executed_command = edited_command.command
+                        
+                        # Add to history
+                        if config.get('history.enabled', True):
+                            history_entry = HistoryEntry(
+                                query=query_text,
+                                command=edited_command.command,
+                                description=edited_command.description,
+                                success=success,
+                                output=output,
+                                working_directory=edited_command.working_directory or ""
+                            )
+                            history.add_entry(history_entry)
+                        
+                        # Write to shell history if enabled
+                        if config.get('history.write_to_shell_history', False) and shell_history and success:
+                            shell_types = config.get('history.shell_history_shells', ['bash', 'zsh'])
+                            for shell_type in shell_types:
+                                shell_history.write_to_history(edited_command.command, shell_type)
+                        
                         break  # Exit the loop and program
                         
                 elif action == 'parameters':
@@ -317,21 +378,30 @@ def to(ctx, query, context):
                             working_directory=selected_command.working_directory
                         )
                         success = minimal_executor.execute_command(custom_cmd)
+                        executed_command = custom_cmd.command
+                        
+                        # Add to history
+                        if config.get('history.enabled', True):
+                            history_entry = HistoryEntry(
+                                query=query_text,
+                                command=custom_cmd.command,
+                                description=custom_cmd.description,
+                                success=success,
+                                output="Command executed" if success else "Command failed",
+                                working_directory=custom_cmd.working_directory or ""
+                            )
+                            history.add_entry(history_entry)
+                        
+                        # Write to shell history if enabled
+                        if config.get('history.write_to_shell_history', False) and shell_history and success:
+                            shell_types = config.get('history.shell_history_shells', ['bash', 'zsh'])
+                            for shell_type in shell_types:
+                                shell_history.write_to_history(custom_cmd.command, shell_type)
+                        
                         break  # Exit the loop and program
                     else:
                         # User cancelled editing - continue loop to show command list again
                         continue
-                
-                # Add to history
-                history_entry = HistoryEntry(
-                    query=query_text,
-                    command=selected_command.command,
-                    description=selected_command.description,
-                    success=success,
-                    output=output,
-                    working_directory=selected_command.working_directory or ""
-                )
-                history.add_entry(history_entry)
             
             # ALWAYS EXIT - No continuation, no questions, nothing!
         
@@ -701,6 +771,43 @@ def history(ctx, search, limit, successful_only, export, stats):
         
         if i < len(entries):
             console.print()
+
+
+@cli.command()
+@click.option('--enable/--disable', default=None, help='Enable or disable shell history integration')
+@click.option('--shells', help='Comma-separated list of shells to write to (bash,zsh,fish)')
+@click.pass_context
+def shell_history_config(ctx, enable, shells):
+    """Configure shell history integration"""
+    config = ctx.obj['config']
+    
+    if enable is not None:
+        config.update_from_cli(**{'history.write_to_shell_history': enable})
+        config.save()
+        status = "enabled" if enable else "disabled"
+        console.print(f"[green]Shell history integration {status}[/green]")
+    
+    if shells:
+        shell_list = [s.strip() for s in shells.split(',')]
+        valid_shells = ['bash', 'zsh', 'fish']
+        invalid = [s for s in shell_list if s not in valid_shells]
+        
+        if invalid:
+            console.print(f"[red]Invalid shells: {', '.join(invalid)}[/red]")
+            console.print(f"[yellow]Valid shells: {', '.join(valid_shells)}[/yellow]")
+            return
+        
+        config.update_from_cli(**{'history.shell_history_shells': shell_list})
+        config.save()
+        console.print(f"[green]Shell history will be written to: {', '.join(shell_list)}[/green]")
+    
+    # Show current configuration
+    if enable is None and shells is None:
+        console.print("\n[bold]Shell History Configuration:[/bold]")
+        console.print(f"Enabled: {config.get('history.write_to_shell_history', False)}")
+        console.print(f"Target shells: {', '.join(config.get('history.shell_history_shells', ['bash', 'zsh']))}")
+        console.print(f"\n[dim]Use --enable/--disable to toggle shell history integration[/dim]")
+        console.print(f"[dim]Use --shells to configure which shell history files to write to[/dim]")
 
 
 if __name__ == '__main__':

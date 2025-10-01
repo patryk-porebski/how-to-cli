@@ -29,6 +29,11 @@ class Config:
             'verbose': False,
             'color': True,
             'format': 'rich'
+        },
+        'history': {
+            'enabled': True,
+            'write_to_shell_history': False,
+            'shell_history_shells': ['bash', 'zsh']
         }
     }
     
