@@ -46,6 +46,6 @@ CONFIG_FILE = "config.yaml"
 
 # Application metadata
 APP_NAME = "How to CLI"
-APP_VERSION = "0.0.5"
+APP_VERSION = "0.0.6"
 APP_DESCRIPTION = "Ask LLMs how to do anything with terminal commands"
 GITHUB_URL = "https://github.com/patryk-porebski/how-to-cli"
